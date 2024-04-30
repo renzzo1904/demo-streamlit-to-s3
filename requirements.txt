@@ -1,3 +1,4 @@
-streamlit 
-st-files-connection
-streamlit-folium
+streamlit = 1.33.0
+st-files-connection = 0.1.0
+streamlit-folium == 0.20.0
+scipy == 1.13.0
