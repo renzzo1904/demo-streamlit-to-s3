@@ -8,6 +8,8 @@ from typing import Iterable
 from streamlit_folium import st_folium
 from folium.plugins import Draw
 
+from helper_script import DataGenerator
+
 # -------------------------------------------------
 
 def clear_fg():
@@ -16,21 +18,24 @@ def clear_fg():
     st.session_state.markers =[]
 
     fg = folium.FeatureGroup()
+
 def add_marker():
     """Function to add marker to the map"""
-    
-    location = st.session_state.get("locations")[-1]
 
-    if len(st.session_state.added_locs[-1])>1 and location != st.session_state.added_locs[-1]:
-        icon = folium.CustomIcon("cow.png", icon_size=(30, 30))
-        animal_id = random.choice(["A","X","C"])+str(random.randint(0,1000))+random.choice(["L","F","X"])
-        st.session_state.added_locs.append(location) 
-        st.session_state.animal_id.append(animal_id)
-        if location:
-            marker = folium.Marker(location=[location["lat"],location["lng"]],
-                                tooltip = f"Animal_ID : {animal_id}", 
-                                icon=icon)
+    icon = folium.CustomIcon("cow.png", icon_size=(30, 30))
+    location = st.session_state.get("locations")
+    
+    if location:
+       location = location[-1] # Slice lcoation if location list not empty
+       if not st.session_state.added_locs or (len(st.session_state.added_locs[-1]) > 1 and location != st.session_state.added_locs[-1]):
+            animal_id = random.choice(["A","X","C"]) + str(random.randint(0, 1000)) + random.choice(["L","F","X"])
+            st.session_state.added_locs.append(location)
+            st.session_state.animal_id.append(animal_id)
+            marker = folium.Marker(location=[location["lat"], location["lng"]],
+                               tooltip=f"Animal_ID: {animal_id}",
+                               icon=icon)
             st.session_state.markers.append(marker)
+       else: pass
     else: pass
 
 def change_zoom():
@@ -50,7 +55,6 @@ def change_zoom():
     else: 
         closest_zoom = min(zoom_list, key=lambda x: abs(x - current_zoom))
         st.session_state.zoom = closest_zoom
-    st.info("Added a new marker to the map")
 
 def recenter_map():
     """Recenter map based on a series of locations.
@@ -64,32 +68,53 @@ def recenter_map():
 
     else: pass
 
-# def add_last_clicked_to_map(map_dict:Dict,feature_group):
+@st.cache_data
+def create_df(*args,**kwargs):
+    """ Function to call the generator and create the df.
+    *args
 
-#     last_loc_clicked =  map_dict.get("last_clicked")
+    list_of_animals [Array] : Index of Animals to generate data from.
+    locations [Array((Tuple), ...)] : Locations associoated with index animals
+    n_samples = number of data points to generate per animal.
+    """
 
-#     if last_loc_clicked:
-#         marker = folium.Marker(location=[values for values in last_loc_clicked.values()],
-#                            popup = time.time(),icon=folium.Icon(color="blue"))
+    list_of_animals, locations, *_ = args 
+
+    variables = kwargs.get("variables",None)                        # extract variables 
+    n_samples = kwargs.get("n") or kwargs.get("n_rows") or 1        # extract n_rows
+    p = kwargs.get("p") or kwargs.get("prob") or 0.1                # extract probability
+
+    if list_of_animals and locations :
+
+        generator = DataGenerator(list_of_animals,locations,
+                                  n=n_samples,
+                                  variables=variables,
+                                  p=p)
+
+        return generator.generate_df(n_samples)
     
-#         feature_group.add_child(marker)
-#     else: pass
+    else: return st.warning("No list of ids has been passed!")
+
+def generate_new_df():
+    st.session_state.generate_new_df = True
 # -------------------------------------------------
 
 if "df" not in st.session_state:
-    st.session_state.df = None
+    st.session_state.df = None              # var to store the df
 if "animal_id" not in st.session_state:
-    st.session_state.animal_id = []
+    st.session_state.animal_id = []         # list of animal to be indexed
 if "markers" not in st.session_state:
-    st.session_state.markers = []
+    st.session_state.markers = []           # object to store folium marker objects
 if "locations" not in st.session_state:
-    st.session_state.locations = []
+    st.session_state.locations = []         # object to store last clicked locations on the mapp
 if "added_locs" not in st.session_state:
-    st.session_state.added_locs = []
+    st.session_state.added_locs = []        # object to store locations that succesfully have been added to map
 if "center" not in st.session_state:
-    st.session_state["center"] = {"lat":25.5503534,"lng":-99.9710282}
+    st.session_state["center"] = {"lat":25.5503534,"lng":-99.9710282}  # object to pass to center arg in folium map
 if "zoom" not in st.session_state:
-    st.session_state["zoom"] = 13
+    st.session_state["zoom"] = 13                                      # object to pass to zoom arg in folium map         
+if "generate_new_df" not in st.session_state:
+    st.session_state["generate_new_df"] = False                        # object to use the button of the form correctly
 
 #Draw(export=True).add_to(m)
 # -------------------------------------------------
@@ -109,7 +134,7 @@ with columns[0]:
         with b_cols[1]:
             st.button("Change Zoom 🔬", on_click= change_zoom)
         with b_cols[2]:
-            st.button("Add to Map ⭕",on_click=add_marker)
+            st.button("Add to Map ⭕",on_click=add_marker,key="add_to_map_button")
         with b_cols[3]:
             st.button("Clear Map ❌", on_click=clear_fg)                
 
@@ -135,46 +160,63 @@ with columns[0]:
         pass
     elif last_value_loc: 
         st.session_state.locations.append(last_value_loc)
-        #st.write(st.session_state.locations)
 
-    # if st.session_state.map_dict:
-    #     locs= [points["geometry"]["coordinates"] for points in st.session_state.map_dict]
-    #     st.session_state.locations = [{"lng":i[0],"lat":i[1]} for i in locs]
-    #st.write(st.session_state.locations)
+    if st.session_state.add_to_map_button:
+        st.info("Added a new marker to the map",icon="ℹ️")
 
-    #st.write(st.session_state.center)
-    #st.session_state.last_pos_clicked = map.get("last_clicked")
-
-    #text_a.value = st.session_state.last_pos_clicked
-
-    #st.write(st.session_state.last_pos_clicked)
-        
-    #add_marker_to_map(map,feature_group=fg)
 
 with columns[1]:
 
-    #st.write(st.session_state.locations)
-
     var = [
            "temperature",
-           "datetime",
            "humidity",
            "hours_of_sleep"
            "Heart Rate(bpm)",
-           "speed(steps\hour)",
+           "speed(steps/hour)",
            "time_spent_eating",
-           "Breathing Rate(breaths/min)"]
+           "breathing Rate(breaths/min)",]
+    
+    with st.form("key_form"):
 
-    st.multiselect("Select the variables to get into the package ",
-                   options=var,
+        st.multiselect("Select the variables to get into the package ",
+                   options=var,default=var,
                    help="Select the variables to randomly generate for the animal.",
                    key="Variables")
 
-    st.slider("Randomness 💫",
+        st.slider("Randomness 💫",
               help="The more this value increases, the more random are the data between the animals.",
+              min_value = 0.1, max_value=1.0,value = 0.1,step=0.1,
               key="probs")
-    
-    st.button("Generate✅")
+        
+        st.slider("Number of Samples", help="Number of samples per ID to generate",
+            min_value=1,max_value=200,value=10,step=10,key="N_samples")
+        
+        st.write('Press submit to generate.')
 
-    #st.write(map)
+        submit = st.form_submit_button(label='Generate New Data ✅',on_click=generate_new_df)
+        
+    #st.write(st.session_state.get("Variables"))    
+if st.session_state.get("generate_new_df") and st.session_state.get("animal_id") and st.session_state.get("added_locs"):
+    with st.spinner("Creating dataset"):
+
+        time.sleep(2)
+        
+        st.session_state.df = create_df(st.session_state.animal_id, st.session_state.added_locs,
+                                        variables =st.session_state.get("Variables"),
+                                        n_rows=st.session_state.get("N_samples"),
+                                        p=st.session_state.get("probs"))
+
+        st.data_editor(st.session_state.df,
+                       column_config={"datetime":st.column_config.DatetimeColumn(
+                           format="D MMM YYYY, h:mm a"
+                       )}) # print the new df
+
+        st.session_state.generate_new_df = False # set to false again 
+
+elif st.session_state.get("df") is not None:
+
+        st.data_editor(st.session_state.df,
+                       column_config={"datetime":st.column_config.DatetimeColumn(
+                           format="D MMM YYYY, h:mm a"
+                       )}) # print the new df
 
